@@ -49,60 +49,74 @@ exports.getJobs = async (req, res) => {
         }
     }
     try {
-            const jobs = await Job.find(query).populate(
-                "company",
-                "name companyName companyLogo"
-            );
+        const jobs = await Job.find(query).populate(
+            "company",
+            "name companyName companyLogo"
+        );
 
-            let savedJobIds = [];
-            let appliedJobStatusMap = {};
+        let savedJobIds = [];
+        let appliedJobStatusMap = {};
 
-            if (userId) {
-                // Saved Jobs
-                const savedJobs = await SavedJobs.find({ jobseeker: userId }).select("job");
-                savedJobIds = savedJobs.map((s) => String(s.job));
+        if (userId) {
+            // Saved Jobs
+            const savedJobs = await SavedJobs.find({ jobseeker: userId }).select("job");
+            savedJobIds = savedJobs.map((s) => String(s.job));
 
-                // Applications
-                const applications = await Application.find({ applicant: userId }).select("job status");
+            // Applications
+            const applications = await Application.find({ applicant: userId }).select("job status");
 
-                applications.forEach((app) => {
-                    appliedJobStatusMap[String(app.job)] = app.status;
-                });
-            }
-
-            // Add isSaved and applicationStatus to each job
-            const jobsWithExtras = jobs.map((job) => {
-                const jobIdStr = String(job._id);
-
-                return {
-                    ...job.toObject(),
-                    isSaved: savedJobIds.includes(jobIdStr),
-                    applicationStatus: appliedJobStatusMap[jobIdStr] || null,
-                };
-            });
-
-            return res.status(200).json(jobsWithExtras);
-
-        } catch (error) {
-            return res.status(500).json({
-                message: error.message
+            applications.forEach((app) => {
+                appliedJobStatusMap[String(app.job)] = app.status;
             });
         }
 
+        // Add isSaved and applicationStatus to each job
+        const jobsWithExtras = jobs.map((job) => {
+            const jobIdStr = String(job._id);
+
+            return {
+                ...job.toObject(),
+                isSaved: savedJobIds.includes(jobIdStr),
+                applicationStatus: appliedJobStatusMap[jobIdStr] || null,
+            };
+        });
+
+        return res.status(200).json(jobsWithExtras);
+
+    } catch (error) {
+        return res.status(500).json({
+            message: error.message
+        });
     }
+
+}
 
 exports.getJobsEmployer = async (req, res) => {
     try {
 
         const userId = req.user._id;
-        const {role} = req.user;
+        const { role } = req.user;
 
-        if(role !== "employer"){
-            return res.status(403).json({message:"Access deneid"})
+        if (role !== "employer") {
+            return res.status(403).json({ message: "Access denied" })
         }
         // get all jobs posted by employer
 
-        const jobs = Jobs.find({company:userId}).populate("name","name companyName, companyLogo")
+        const jobs = await Job.find({ company: userId }).populate("company", "name companyName companyLogo")
+            .lean();
+
+        const jobsWithApplicationCount = await Promise.all(
+            jobs.map(async (job) => {
+                const countApplication = await Application.countDocuments({ job: job._id });
+                return {
+                    ...job,
+                    countApplication
+                };
+            })
+        );
+
+        res.status(200).json(jobsWithApplicationCount);
+
     } catch (err) {
         res.status(500).json({ message: err.message })
     }
@@ -111,7 +125,33 @@ exports.getJobsEmployer = async (req, res) => {
 
 exports.getJobById = async (req, res) => {
     try {
+        const { userId } = req.query;
 
+        const job = await Job.findById(req.params.id).populate(
+            "company",
+            "name companyName companyLogo"
+        );
+
+        if (!job) {
+            return res.status(404).json({
+                message: "Job not found"
+            });
+        }
+
+        let applicationStatus = null;
+
+        if (userId) {
+            const application = await Application.findOne({
+                job: job._id,
+                applicant: userId,
+            }).select("status");
+
+            if (application) {
+                applicationStatus = application.status;
+            }
+        }
+
+        // Send response...
     } catch (err) {
         res.status(500).json({ message: err.message })
     }
@@ -120,6 +160,15 @@ exports.getJobById = async (req, res) => {
 
 exports.updateJob = async (req, res) => {
     try {
+        const job = await Job.findById(req.params.id);
+        if (!job) return res.status(404).json({ message: "Job not found" });
+
+        if (job.company.toString() !== req.user._id.toString())
+            return res.status(403).json({ message: "Not authorized to update this job" })
+
+        Object.assign(job, req.body);
+        const update = await job.save();
+        res.json(update);
 
     } catch (err) {
         res.status(500).json({ message: err.message })
@@ -128,6 +177,14 @@ exports.updateJob = async (req, res) => {
 
 exports.deleteJob = async (req, res) => {
     try {
+        const job = await Job.findById(req.params.id)
+        if (!job) return res.status(404).json({ message: "Job not found" })
+
+        if (job.company.toString() !== req.user._id.toString())
+            return res.status(403).json({ message: "Not authorized to delete the job" })
+
+        await job.deleteOne();
+        res.json({ message: "Job deleted successfully" })
 
     } catch (err) {
         res.status(500).json({ message: err.message })
@@ -137,6 +194,17 @@ exports.deleteJob = async (req, res) => {
 
 exports.toggleCloseJob = async (req, res) => {
     try {
+        const job = await Job.findById(req.params.id)
+        if(!job) 
+            return res.status(404).json({message:"Job not found"})
+
+        if(job.company.toString() !== req.user._id.toString())
+            return res.status(403).json({message:"Not authorized to close the job"})
+
+        job.isClosed = !job.isClosed;
+        await job.save();
+        res.json({message: `Job ${job.isClosed ? "closed" : "opened"} successfully`})
+
 
     } catch (err) {
         res.status(500).json({ message: err.message })
