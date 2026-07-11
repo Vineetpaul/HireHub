@@ -1,8 +1,6 @@
-import React from "react";
+import { Outlet } from "react-router-dom";
 
-import { Navigate, Outlet, useLocation } from "react-router-dom";
-
-const ProtectedRoutes = ({ requiredRole }) => {
+const ProtectedRoutes = () => {
   return (
     <Outlet />
   )

@@ -1,4 +1,3 @@
-import React from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Briefcase, User, Target } from 'lucide-react'
 

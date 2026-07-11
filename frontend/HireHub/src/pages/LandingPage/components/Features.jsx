@@ -1,4 +1,3 @@
-import React from 'react'
 import { employerFeatures, jobSeekersFeatures } from '../../../utils/data'
 import { motion } from 'framer-motion'
 const Features = () => {

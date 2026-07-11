@@ -74,7 +74,7 @@ const Login = () => {
     try{
       // Simulating an API call with a timeout
     }
-    catch(error){
+    catch{
       setFormState(prev=>({...prev, loading:false, errors:{submit:'An error occurred. Please try again.'}}));
     }
     
