@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { API_PATHS } from '../../utils/apiPaths'
+import axiosInstance from '../../utils/axiosInstance'
 import { validateEmail, validatePassword, validateAvatar } from '../../utils/helper'
+import uploadImage from '../../utils/uploadImage'
 import {
   Mail,
   Lock,
@@ -16,6 +20,7 @@ import {
 } from 'lucide-react'
 
 const SignUp = () => {
+  const navigate = useNavigate();
 
   // defining states For the form fields
   const [formData, setFormData] = useState({
@@ -121,7 +126,28 @@ const SignUp = () => {
     setFormState(prev=>({...prev, loading:true, errors:{}}));
 
     try{
-      // Simulating an API call with a timeout
+      const { data: user } = await axiosInstance.post(API_PATHS.AUTH.REGISTER, {
+        name: formData.fullName.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        role: formData.role,
+      });
+      localStorage.setItem('token', user.token);
+
+      if (formData.avatar) {
+        try {
+          const { imageUrl } = await uploadImage(formData.avatar);
+          await axiosInstance.put(API_PATHS.AUTH.UPDATE_PROFILE, { avatar: imageUrl });
+        } catch {
+          setFormState(prev => ({
+            ...prev,
+            errors: { ...prev.errors, avatar: 'Account created, but the profile picture could not be uploaded.' },
+          }));
+        }
+      }
+
+      setFormState(prev=>({...prev, loading:false, success:true}));
+      setTimeout(() => navigate(user.role === 'employer' ? '/employer/dashboard' : '/find-jobs', { replace: true }), 1000);
     }
     catch(error){
       setFormState(prev=>({...prev, loading:false, errors:{submit:error.response?.data?.message||'Registration failed. Please try again.'}}));
@@ -131,7 +157,7 @@ const SignUp = () => {
 
   const validateForm = () => {
 const errors = {
-  fullName: !formData.fullName ? "Enter you Name" : "",
+  fullName: !formData.fullName.trim() ? "Enter your name" : "",
   email: validateEmail(formData.email),
   password: validatePassword(formData.password),
   role: !formData.role ? "Please select an Role" : "",
@@ -154,6 +180,7 @@ return Object.keys(errors).length === 0;
           <CheckCircle className="w-12 h-12 text-green-500 animate-bounce mx-auto "></CheckCircle>
           <h2 className="text-2xl font-bold text-gray-900 ml-4">Account Created!</h2>
           <p className="text-green-600 text-lg font-semibold ml-4 mb-2">Welcome to HireHub your account has been successfully created</p>
+          {formState.errors.avatar && <p className="text-amber-700 text-sm mb-2">{formState.errors.avatar}</p>}
 
           <div className="animate-spin w-5 h-5 rounded-full border-2 mb-2 border-blue-500 mx-auto border-t-transparent " />
           <p className="text-gray-600 text-sm">Redirecting to your dashboard...</p>

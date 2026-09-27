@@ -1,15 +1,18 @@
 import { motion } from 'framer-motion'
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader, CheckCircle } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { API_PATHS } from '../../utils/apiPaths'
+import axiosInstance from '../../utils/axiosInstance'
 import { validateEmail } from '../../utils/helper'
 
 const Login = () => {
+  const navigate = useNavigate();
 
   // defining states For the form fields
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    remeberMe: false
   });
 
   const [formState, setFormState] = useState({
@@ -72,10 +75,16 @@ const Login = () => {
     setFormState(prev=>({...prev, loading:true, errors:{}}));
 
     try{
-      // Simulating an API call with a timeout
+      const { data: user } = await axiosInstance.post(API_PATHS.AUTH.LOGIN, {
+        email: formData.email.trim(),
+        password: formData.password,
+      });
+      localStorage.setItem('token', user.token);
+      setFormState(prev=>({...prev, loading:false, success:true}));
+      setTimeout(() => navigate(user.role === 'employer' ? '/employer/dashboard' : '/find-jobs', { replace: true }), 1000);
     }
-    catch{
-      setFormState(prev=>({...prev, loading:false, errors:{submit:'An error occurred. Please try again.'}}));
+    catch(error){
+      setFormState(prev=>({...prev, loading:false, errors:{submit:error.response?.data?.message || 'An error occurred. Please try again.'}}));
     }
     
   };
