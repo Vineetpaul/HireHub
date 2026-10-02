@@ -36,13 +36,14 @@ const App = () => {
           <Route path='saved-jobs' element={<SavedJobs />} />
           <Route path='/profile' element={<UserProfile />} />
 
-          {/* Creating some protected routes */}
-          <Route element={<ProtectedRoutes requiredRole='employer' />} />
-          <Route path='/employer/dashboard' element={<EmployerDashboard />} />
-          <Route path='/post-job' element={<JobPostingForm />} />
-          <Route path='/manage-jobs' element={<ManageJobs />} />
-          <Route path='applicants' element={<ApplicationViewer />} />
-          <Route path='company-profile' element={<EmployProfilePage />} />
+          {/* Protected employer routes */}
+          <Route element={<ProtectedRoutes requiredRole='employer' />}>
+            <Route path='/employer/dashboard' element={<EmployerDashboard />} />
+            <Route path='/post-job' element={<JobPostingForm />} />
+            <Route path='/manage-jobs' element={<ManageJobs />} />
+            <Route path='applicants' element={<ApplicationViewer />} />
+            <Route path='company-profile' element={<EmployProfilePage />} />
+          </Route>
 
           {/* Handle All routes */}
           <Route path='*' element={<Navigate to='/' replace />} />

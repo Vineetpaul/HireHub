@@ -13,7 +13,7 @@ const Analytics = () => {
     return (
         <section className=" overflow-hidden">
             <div className="container mx-auto p-4">
-                <motion.h1 className="text-center mb-8 text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6 pt-10"
+                <motion.h1 className="text-center text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6 pt-10"
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8 }}

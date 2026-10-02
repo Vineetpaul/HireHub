@@ -30,7 +30,7 @@ exports.getJobs = async (req, res) => {
     const query = {
         isClosed: false,
         ...(keyword && { title: { $regex: keyword, $options: "i" } }),
-        ...(keyword && { title: { $regex: keyword, $options: "i" } }),
+        ...(location && { location: { $regex: location, $options: "i" } }),
         ...(category && { category }),
         ...(type && { type }),
     }
@@ -151,7 +151,11 @@ exports.getJobById = async (req, res) => {
             }
         }
 
-        // Send response...
+        // Send response with job and application status
+        res.json({
+            ...job.toObject(),
+            applicationStatus,
+        });
     } catch (err) {
         res.status(500).json({ message: err.message })
     }
