@@ -6,46 +6,69 @@ import JobCard from '../../components/Cards/JobCard';
 import axiosInstance from '../../utils/axiosInstance';
 import { API_PATHS } from '../../utils/apiPaths';
 import { CATEGORIES, JOB_TYPES } from '../../utils/data';
+
+const requestJobs = async (filters) => {
+  const params = {};
+  if (filters.keyword.trim()) params.keyword = filters.keyword.trim();
+  if (filters.location.trim()) params.location = filters.location.trim();
+  if (filters.category) params.category = filters.category;
+  if (filters.type) params.type = filters.type;
+  if (filters.minSalary) params.minSalary = filters.minSalary;
+  if (filters.maxSalary) params.maxSalary = filters.maxSalary;
+  const { data } = await axiosInstance.get(API_PATHS.JOBS.GET_ALL_JOBS, { params });
+  return data;
+};
+
 const JobSeekerDashboard = () => {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [userId, setUserId] = useState(null);
   const [filters, setFilters] = useState({
     keyword: '', location: '', category: '', type: '', minSalary: '', maxSalary: '',
   });
   const [showFilters, setShowFilters] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState(new Set());
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try { const payload = JSON.parse(atob(token.split('.')[1])); setUserId(payload.id); } catch { }
-    }
+  const showJobs = useCallback((data) => {
+    setJobs(data);
+    const saved = new Set();
+    data.forEach((job) => { if (job.isSaved) saved.add(job._id); });
+    setSavedJobIds(saved);
   }, []);
 
   const fetchJobs = useCallback(async () => {
-    setLoading(true); setError(null);
     try {
-      const params = {};
-      if (filters.keyword.trim()) params.keyword = filters.keyword.trim();
-      if (filters.location.trim()) params.location = filters.location.trim();
-      if (filters.category) params.category = filters.category;
-      if (filters.type) params.type = filters.type;
-      if (filters.minSalary) params.minSalary = filters.minSalary;
-      if (filters.maxSalary) params.maxSalary = filters.maxSalary;
-      if (userId) params.userId = userId;
-      const { data } = await axiosInstance.get(API_PATHS.JOBS.GET_ALL_JOBS, { params });
-      setJobs(data);
-      const saved = new Set();
-      data.forEach((job) => { if (job.isSaved) saved.add(job._id); });
-      setSavedJobIds(saved);
+      showJobs(await requestJobs(filters));
+      setError(null);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to fetch jobs.');
     } finally { setLoading(false); }
-  }, [filters, userId]);
+  }, [filters, showJobs]);
 
-  useEffect(() => { fetchJobs(); }, [fetchJobs]);
+  useEffect(() => {
+    let active = true;
+    const loadJobs = async () => {
+      try {
+        const data = await requestJobs(filters);
+        if (active) {
+          showJobs(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (active) setError(err.response?.data?.message || 'Failed to fetch jobs.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadJobs();
+    return () => { active = false; };
+  }, [filters, showJobs]);
+
+  const handleSearch = () => {
+    setLoading(true);
+    setError(null);
+    fetchJobs();
+  };
 
   const handleSaveToggle = async (jobId) => {
     const token = localStorage.getItem('token');
@@ -81,7 +104,7 @@ return (
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input type="text" placeholder="Search by job title, skills, or keywords..."
                     value={filters.keyword} onChange={(e) => setFilters((p) => ({ ...p, keyword: e.target.value }))}
-                    onKeyDown={(e) => e.key === 'Enter' && fetchJobs()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                     className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-700 placeholder-gray-400 transition-all" />
                 </div>
                 <div className="flex gap-2">
@@ -89,14 +112,14 @@ return (
                     <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input type="text" placeholder="Location..." value={filters.location}
                       onChange={(e) => setFilters((p) => ({ ...p, location: e.target.value }))}
-                      onKeyDown={(e) => e.key === 'Enter' && fetchJobs()}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                       className="w-full sm:w-40 pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-700 placeholder-gray-400 transition-all" />
                   </div>
                   <button onClick={() => setShowFilters(!showFilters)}
                     className={`px-4 py-3 rounded-xl border transition-all flex items-center space-x-2 ${showFilters || hasActiveFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                     <SlidersHorizontal className="w-5 h-5" /><span className="hidden sm:inline text-sm font-medium">Filters</span>
                   </button>
-                  <button onClick={fetchJobs}
+                  <button onClick={handleSearch}
                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium rounded-xl hover:from-blue-700 hover:to-purple-700 shadow-md hover:shadow-lg flex items-center space-x-2">
                     <Search className="w-5 h-5" /><span className="hidden sm:inline">Search</span>
                   </button>
@@ -145,7 +168,7 @@ return (
                             </button>
                           )}
                         </div>
-                        <button onClick={fetchJobs} className="flex items-center space-x-1 text-sm text-blue-600 font-medium hover:text-blue-700">
+                        <button onClick={handleSearch} className="flex items-center space-x-1 text-sm text-blue-600 font-medium hover:text-blue-700">
                           <RefreshCw className="w-4 h-4" /><span>Apply Filters</span>
                         </button>
                       </div>
@@ -183,7 +206,7 @@ return (
               </div>
               <h3 className="text-lg font-semibold text-red-700 mb-2">Oops! Something went wrong</h3>
               <p className="text-red-600 text-sm mb-4">{error}</p>
-              <button onClick={fetchJobs} className="px-6 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 font-medium text-sm">Try Again</button>
+              <button onClick={handleSearch} className="px-6 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 font-medium text-sm">Try Again</button>
             </motion.div>
           )}
 

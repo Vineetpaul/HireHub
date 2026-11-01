@@ -1,12 +1,14 @@
 const Job = require('../models/Job');
-const User = require('../models/User');
 const Application = require('../models/Application');
 const SavedJobs = require('../models/SavedJob');
+const mongoose = require('mongoose');
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 exports.createJob = async (req, res) => {
     try {
         if (req.user.role !== "employer")
-            return res.status(500).json({ message: "Only employer can post jobs" });
+            return res.status(403).json({ message: "Only employers can post jobs" });
 
         const job = await Job.create({ ...req.body, company: req.user._id })
         res.status(201).json(job);
@@ -25,24 +27,43 @@ exports.getJobs = async (req, res) => {
         type,
         minSalary,
         maxSalary,
-        userId,
     } = req.query;
+
+    if (
+        (keyword !== undefined && typeof keyword !== "string") ||
+        (location !== undefined && typeof location !== "string") ||
+        (category !== undefined && typeof category !== "string") ||
+        (type !== undefined && typeof type !== "string")
+    ) {
+        return res.status(400).json({ message: "Invalid job filters" });
+    }
+
+    const minSalaryValue = minSalary === undefined || minSalary === "" ? undefined : Number(minSalary);
+    const maxSalaryValue = maxSalary === undefined || maxSalary === "" ? undefined : Number(maxSalary);
+    if (
+        (minSalaryValue !== undefined && (!Number.isFinite(minSalaryValue) || minSalaryValue < 0)) ||
+        (maxSalaryValue !== undefined && (!Number.isFinite(maxSalaryValue) || maxSalaryValue < 0)) ||
+        (minSalaryValue !== undefined && maxSalaryValue !== undefined && minSalaryValue > maxSalaryValue)
+    ) {
+        return res.status(400).json({ message: "Invalid salary range" });
+    }
+
     const query = {
         isClosed: false,
-        ...(keyword && { title: { $regex: keyword, $options: "i" } }),
-        ...(location && { location: { $regex: location, $options: "i" } }),
+        ...(keyword && { title: { $regex: escapeRegex(keyword), $options: "i" } }),
+        ...(location && { location: { $regex: escapeRegex(location), $options: "i" } }),
         ...(category && { category }),
         ...(type && { type }),
     }
 
-    if (minSalary || maxSalary) {
+    if (minSalaryValue !== undefined || maxSalaryValue !== undefined) {
         query.$and = [];
 
-        if (minSalary) {
-            query.$and.push({ salaryMax: { $gte: Number(minSalary) } });
+        if (minSalaryValue !== undefined) {
+            query.$and.push({ salaryMax: { $gte: minSalaryValue } });
         }
-        if (maxSalary) {
-            query.$and.push({ salaryMin: { $lte: Number(maxSalary) } });
+        if (maxSalaryValue !== undefined) {
+            query.$and.push({ salaryMin: { $lte: maxSalaryValue } });
         }
         if (query.$and.length === 0) {
             delete query.$and;
@@ -57,13 +78,13 @@ exports.getJobs = async (req, res) => {
         let savedJobIds = [];
         let appliedJobStatusMap = {};
 
-        if (userId) {
+        if (req.user?.role === "jobSeeker") {
             // Saved Jobs
-            const savedJobs = await SavedJobs.find({ jobseeker: userId }).select("job");
+            const savedJobs = await SavedJobs.find({ jobseeker: req.user._id }).select("job");
             savedJobIds = savedJobs.map((s) => String(s.job));
 
             // Applications
-            const applications = await Application.find({ applicant: userId }).select("job status");
+            const applications = await Application.find({ applicant: req.user._id }).select("job status");
 
             applications.forEach((app) => {
                 appliedJobStatusMap[String(app.job)] = app.status;
@@ -125,7 +146,9 @@ exports.getJobsEmployer = async (req, res) => {
 
 exports.getJobById = async (req, res) => {
     try {
-        const { userId } = req.query;
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid job ID" });
+        }
 
         const job = await Job.findById(req.params.id).populate(
             "company",
@@ -139,22 +162,20 @@ exports.getJobById = async (req, res) => {
         }
 
         let applicationStatus = null;
-
-        if (userId) {
-            const application = await Application.findOne({
-                job: job._id,
-                applicant: userId,
-            }).select("status");
-
-            if (application) {
-                applicationStatus = application.status;
-            }
+        let isSaved = false;
+        if (req.user?.role === "jobSeeker") {
+            const [application, savedJob] = await Promise.all([
+                Application.findOne({ job: job._id, applicant: req.user._id }).select("status"),
+                SavedJobs.exists({ job: job._id, jobseeker: req.user._id }),
+            ]);
+            applicationStatus = application?.status || null;
+            isSaved = Boolean(savedJob);
         }
 
-        // Send response with job and application status
         res.json({
             ...job.toObject(),
             applicationStatus,
+            isSaved,
         });
     } catch (err) {
         res.status(500).json({ message: err.message })
@@ -164,13 +185,28 @@ exports.getJobById = async (req, res) => {
 
 exports.updateJob = async (req, res) => {
     try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid job ID" });
+        }
         const job = await Job.findById(req.params.id);
         if (!job) return res.status(404).json({ message: "Job not found" });
 
         if (job.company.toString() !== req.user._id.toString())
             return res.status(403).json({ message: "Not authorized to update this job" })
 
-        Object.assign(job, req.body);
+        const editableFields = [
+            "title",
+            "description",
+            "requirements",
+            "location",
+            "category",
+            "type",
+            "salaryMin",
+            "salaryMax",
+        ];
+        editableFields.forEach((field) => {
+            if (req.body[field] !== undefined) job[field] = req.body[field];
+        });
         const update = await job.save();
         res.json(update);
 
@@ -181,6 +217,9 @@ exports.updateJob = async (req, res) => {
 
 exports.deleteJob = async (req, res) => {
     try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid job ID" });
+        }
         const job = await Job.findById(req.params.id)
         if (!job) return res.status(404).json({ message: "Job not found" })
 
@@ -198,6 +237,9 @@ exports.deleteJob = async (req, res) => {
 
 exports.toggleCloseJob = async (req, res) => {
     try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid job ID" });
+        }
         const job = await Job.findById(req.params.id)
         if(!job) 
             return res.status(404).json({message:"Job not found"})

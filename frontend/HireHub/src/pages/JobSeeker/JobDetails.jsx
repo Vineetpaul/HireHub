@@ -18,18 +18,17 @@ const JobDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
+  const [userLoaded, setUserLoaded] = useState(() => !localStorage.getItem('token'));
   const [applying, setApplying] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
-  // Decode user from token
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setUser(payload);
-      } catch { }
-    }
+    if (!localStorage.getItem('token')) return;
+    axiosInstance.get(API_PATHS.AUTH.GET_PROFILE)
+      .then(({ data }) => setUser(data))
+      .catch((err) => setError(err.response?.data?.message || 'Failed to load your profile'))
+      .finally(() => setUserLoaded(true));
   }, []);
 
   // Fetch job details
@@ -37,9 +36,7 @@ const JobDetails = () => {
     const fetchJob = async () => {
       setLoading(true);
       try {
-        const params = {};
-        if (user) params.userId = user.id;
-        const { data } = await axiosInstance.get(API_PATHS.JOBS.GET_JOB_BY_ID(jobId), { params });
+        const { data } = await axiosInstance.get(API_PATHS.JOBS.GET_JOB_BY_ID(jobId));
         setJob(data);
         setIsSaved(data.isSaved || false);
       } catch (err) {
@@ -48,8 +45,8 @@ const JobDetails = () => {
         setLoading(false);
       }
     };
-    if (jobId) fetchJob();
-  }, [jobId, user]);
+    if (jobId && userLoaded) fetchJob();
+  }, [jobId, userLoaded]);
 
   // Handle Apply
   const handleApply = async () => {
@@ -69,6 +66,7 @@ const JobDetails = () => {
   // Handle Save/Unsave
   const handleSaveToggle = async () => {
     if (!user) { navigate('/Login'); return; }
+    setSaveError('');
     try {
       if (isSaved) {
         await axiosInstance.delete(API_PATHS.JOBS.UNSAVE_JOB(jobId));
@@ -77,7 +75,9 @@ const JobDetails = () => {
         await axiosInstance.post(API_PATHS.JOBS.SAVE_JOB(jobId));
         setIsSaved(true);
       }
-    } catch { }
+    } catch (err) {
+      setSaveError(err.response?.data?.message || 'Could not update your saved jobs. Please try again.');
+    }
   };
 
   // Color for job type badge
@@ -164,6 +164,7 @@ const JobDetails = () => {
                   {isSaved ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
                 </button>
               </div>
+              {saveError && <p role="alert" className="mb-4 text-sm text-red-600">{saveError}</p>}
               {/* Tags */}
               <div className="flex flex-wrap gap-2 mb-6">
                 {job.type && (
@@ -279,5 +280,3 @@ const JobDetails = () => {
 };
 
 export default JobDetails;
-
-
